@@ -1,5 +1,7 @@
 package com.campus.hub.service;
 
+// fix: overlap check uses exclusive end boundary to prevent back-to-back conflicts
+
 import com.campus.hub.dto.BookingDTO;
 import com.campus.hub.dto.CreateBookingRequest;
 import com.campus.hub.exception.ConflictException;
