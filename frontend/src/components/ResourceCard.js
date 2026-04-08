@@ -1,50 +1,72 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import StatusBadge from './StatusBadge';
 
 const TYPE_LABELS = {
-  LECTURE_HALL: '🏛 Lecture Hall',
-  LAB:          '🔬 Lab',
-  MEETING_ROOM: '🤝 Meeting Room',
-  EQUIPMENT:    '🔧 Equipment',
-  ROOM:         '🚪 Room',
+  LECTURE_HALL: { icon: '🏛', label: 'Lecture Hall' },
+  LAB:          { icon: '🔬', label: 'Lab' },
+  MEETING_ROOM: { icon: '🤝', label: 'Meeting Room' },
+  EQUIPMENT:    { icon: '🔧', label: 'Equipment' },
+  ROOM:         { icon: '🚪', label: 'Room' },
 };
 
 const ResourceCard = ({ resource }) => {
-  const typeLabel = TYPE_LABELS[resource.type] || resource.type;
-
-  const availabilityText = resource.availability
+  const navigate   = useNavigate();
+  const typeMeta   = TYPE_LABELS[resource.type] || { icon: '🏢', label: resource.type };
+  const isActive   = resource.status === 'ACTIVE';
+  const availability = resource.availability
     ? `${resource.availability.startTime || '—'} – ${resource.availability.endTime || '—'}`
     : null;
 
   return (
-    <div className="card resource-card" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <div className="card-header">
-        <div>
-          <h3 style={{ color: '#1e3a8a', marginBottom: '0.2rem', fontSize: '1.05rem' }}>
-            {resource.name}
-          </h3>
-          <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
-            {typeLabel}
-          </span>
-        </div>
-        <span className={`status-badge ${resource.bookable ? 'bg-approved' : 'bg-rejected'}`}>
-          {resource.status === 'ACTIVE' ? 'Active' : 'Out of Service'}
-        </span>
+    <div className="resource-card">
+      {/* Icon */}
+      <div style={{
+        width: 44, height: 44, borderRadius: 12,
+        background: isActive ? 'rgba(108,92,231,0.15)' : 'rgba(255,118,117,0.12)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '1.3rem', marginBottom: 12,
+      }}>
+        {typeMeta.icon}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.9rem', color: '#334155' }}>
-        <p>📍 <strong>Location:</strong> {resource.location}</p>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+        <div>
+          <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: 2 }}>
+            {resource.name}
+          </h3>
+          <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{typeMeta.label}</span>
+        </div>
+        <StatusBadge status={isActive ? 'active' : 'oos'} />
+      </div>
+
+      {/* Details */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>📍 {resource.location}</span>
         {resource.capacity && (
-          <p>👥 <strong>Capacity:</strong> {resource.capacity} people</p>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>👥 Capacity: {resource.capacity} people</span>
         )}
-        {availabilityText && (
-          <p>🕐 <strong>Available:</strong> {availabilityText}</p>
+        {availability && (
+          <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>🕐 {availability}</span>
         )}
         {resource.createdAt && (
-          <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>
-            Added: {new Date(resource.createdAt).toLocaleDateString()}
-          </p>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+            Added {new Date(resource.createdAt).toLocaleDateString()}
+          </span>
         )}
       </div>
+
+      {/* CTA button */}
+      <button
+        className="btn btn-primary btn-sm"
+        style={{ width: '100%' }}
+        disabled={!isActive}
+        onClick={() => navigate('/booking')}
+        id={`resource-card-book-${resource.id}`}
+      >
+        {isActive ? '📅 Book Now' : '🚫 Unavailable'}
+      </button>
     </div>
   );
 };

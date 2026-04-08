@@ -1,19 +1,22 @@
 import React from 'react';
 import BookingForm from '../components/BookingForm';
 
-const Booking = () => {
-  return (
-    <div className="page">
-      <h2 className="page-header">📅 Book a Resource</h2>
-      <p style={{ color: '#64748b', marginBottom: '1.5rem', maxWidth: '560px' }}>
-        Fill in the details below to reserve a campus resource. Your request will be reviewed
-        and you'll be notified once it's approved or rejected.
+const Booking = () => (
+  <>
+    {/* Page header */}
+    <div className="page-header">
+      <h1 className="page-title">📅 Book a Resource</h1>
+      <p className="page-subtitle">
+        Fill in the details below to reserve a campus resource.
+        Your request will be reviewed and you'll receive a notification once approved or rejected.
       </p>
-      <div style={{ maxWidth: '680px' }}>
-        <BookingForm />
-      </div>
     </div>
-  );
-};
+
+    {/* Constrain form width for readability */}
+    <div style={{ maxWidth: 700 }}>
+      <BookingForm />
+    </div>
+  </>
+);
 
 export default Booking;

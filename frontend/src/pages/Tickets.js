@@ -1,38 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
-import TicketForm from '../components/TicketForm';
+import { useAuth }    from '../contexts/AuthContext';
+import TicketForm     from '../components/TicketForm';
+import StatusBadge    from '../components/StatusBadge';
 
-const PRIORITY_COLORS = {
-  LOW: '#64748b', MEDIUM: '#f59e0b', HIGH: '#ef4444', CRITICAL: '#7c3aed',
-};
-const STATUS_COLORS = {
-  OPEN: '#3b82f6', IN_PROGRESS: '#f59e0b', RESOLVED: '#10b981', CLOSED: '#64748b', REJECTED: '#ef4444',
-};
-
-// Matches backend VALID_TRANSITIONS map
+/* ── Constants ─────────────────────────────────────────────── */
 const STATUS_TRANSITIONS = {
   OPEN:        ['IN_PROGRESS', 'REJECTED'],
-  IN_PROGRESS: ['REJECTED'],   // resolve uses modal with notes
+  IN_PROGRESS: ['REJECTED'],
   RESOLVED:    ['CLOSED'],
   CLOSED:      [],
   REJECTED:    [],
 };
-
 const fmt = (dt) => dt ? new Date(dt).toLocaleString() : '—';
 
+/* ── Tickets Page ──────────────────────────────────────────── */
 const Tickets = () => {
   const { user, isAdmin } = useAuth();
-  const [tickets,  setTickets]  = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
-  const [success,  setSuccess]  = useState('');
-  const [comment,  setComment]  = useState({});         // ticketId → new comment text
-  const [editingComment, setEditingComment] = useState(null); // { ticketId, commentId, text }
+  const [tickets,        setTickets]        = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState('');
+  const [success,        setSuccess]        = useState('');
+  const [comment,        setComment]        = useState({});        // ticketId → text
+  const [editingComment, setEditingComment] = useState(null);       // {ticketId, commentId, text}
   const [expandedTicket, setExpandedTicket] = useState(null);
   const [filterStatus,   setFilterStatus]   = useState('');
+  const [showForm,       setShowForm]       = useState(false);
 
-  // Modals
   const [rejectModal,  setRejectModal]  = useState({ open: false, ticketId: null, reason: '' });
   const [resolveModal, setResolveModal] = useState({ open: false, ticketId: null, notes: '' });
 
@@ -53,247 +47,216 @@ const Tickets = () => {
   }, [isAdmin, user?.userId]);
 
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
-  useEffect(() => {
-    if (success) { const t = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(t); }
-  }, [success]);
-  useEffect(() => {
-    if (error)   { const t = setTimeout(() => setError(''),   6000); return () => clearTimeout(t); }
-  }, [error]);
+  useEffect(() => { if (success) { const t = setTimeout(() => setSuccess(''), 4000); return () => clearTimeout(t); } }, [success]);
+  useEffect(() => { if (error)   { const t = setTimeout(() => setError(''),   6000); return () => clearTimeout(t); } }, [error]);
 
-  // ── Status transitions ────────────────────────────────────────────────────
+  /* ── Status transitions ── */
   const handleAdvanceStatus = async (ticketId, nextStatus) => {
-    try {
-      await apiService.updateTicketStatus(ticketId, nextStatus);
-      setSuccess(`Ticket moved to ${nextStatus}.`);
-      fetchTickets();
-    } catch (err) { setError(err.message); }
+    try { await apiService.updateTicketStatus(ticketId, nextStatus); setSuccess(`Ticket → ${nextStatus}.`); fetchTickets(); }
+    catch (err) { setError(err.message); }
   };
-
   const handleRejectConfirm = async () => {
     if (!rejectModal.reason.trim()) { setError('Rejection reason is required.'); return; }
     try {
       await apiService.updateTicketStatus(rejectModal.ticketId, 'REJECTED', rejectModal.reason);
-      setSuccess('Ticket rejected.');
-      setRejectModal({ open: false, ticketId: null, reason: '' });
-      fetchTickets();
+      setSuccess('Ticket rejected.'); setRejectModal({ open: false, ticketId: null, reason: '' }); fetchTickets();
     } catch (err) { setError(err.message); }
   };
-
   const handleResolveConfirm = async () => {
     try {
       await apiService.resolveTicket(resolveModal.ticketId, resolveModal.notes);
-      setSuccess('Ticket resolved.');
-      setResolveModal({ open: false, ticketId: null, notes: '' });
-      fetchTickets();
+      setSuccess('Ticket resolved.'); setResolveModal({ open: false, ticketId: null, notes: '' }); fetchTickets();
     } catch (err) { setError(err.message); }
   };
 
-  // ── Comments ──────────────────────────────────────────────────────────────
+  /* ── Comments ── */
   const handleAddComment = async (ticketId) => {
     const text = comment[ticketId]?.trim();
     if (!text) return;
     try {
       await apiService.addTicketComment(ticketId, user.userId, text);
-      setComment({ ...comment, [ticketId]: '' });
-      setSuccess('Comment added.');
-      fetchTickets();
+      setComment({ ...comment, [ticketId]: '' }); setSuccess('Comment added.'); fetchTickets();
     } catch (err) { setError(err.message); }
   };
-
   const handleEditComment = async () => {
     if (!editingComment?.text?.trim()) { setError('Comment cannot be empty.'); return; }
     try {
       await apiService.editTicketComment(editingComment.ticketId, editingComment.commentId, editingComment.text);
-      setEditingComment(null);
-      setSuccess('Comment updated.');
-      fetchTickets();
+      setEditingComment(null); setSuccess('Comment updated.'); fetchTickets();
     } catch (err) { setError(err.message); }
   };
-
   const handleDeleteComment = async (ticketId, commentId) => {
     if (!window.confirm('Delete this comment?')) return;
-    try {
-      await apiService.deleteTicketComment(ticketId, commentId);
-      fetchTickets();
-    } catch (err) { setError(err.message); }
+    try { await apiService.deleteTicketComment(ticketId, commentId); fetchTickets(); }
+    catch (err) { setError(err.message); }
   };
 
   const filtered = filterStatus ? tickets.filter(t => t.status === filterStatus) : tickets;
 
   return (
-    <div className="page">
-      <h2 className="page-header">🎫 Support Tickets</h2>
+    <>
+      {/* Page Header */}
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 className="page-title">🎫 Support Tickets</h1>
+          <p className="page-subtitle">{isAdmin ? 'Manage all campus support tickets' : 'View and submit campus support tickets'}</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowForm(s => !s)} id="toggle-ticket-form-btn">
+          {showForm ? '↑ Hide Form' : '+ New Ticket'}
+        </button>
+      </div>
 
       {success && <div className="alert alert-success">{success}</div>}
       {error   && <div className="alert alert-error">{error}</div>}
 
-      {/* Reject Modal */}
+      {/* Submit form */}
+      {showForm && (
+        <div className="glass-card" style={{ marginBottom: 22 }}>
+          <TicketForm onSuccess={() => { setSuccess('✅ Ticket submitted!'); fetchTickets(); setShowForm(false); }} />
+        </div>
+      )}
+
+      {/* Modals */}
       {rejectModal.open && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
-          <div className="card" style={{ maxWidth:'440px', width:'90%', margin:0 }}>
-            <h3 style={{ marginBottom:'1rem' }}>❌ Reject Ticket</h3>
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">❌ Reject Ticket</div>
             <div className="form-group">
               <label className="form-label">Rejection Reason *</label>
-              <textarea className="form-textarea" rows="3" placeholder="Reason for rejection..."
-                value={rejectModal.reason}
-                onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })} autoFocus />
+              <textarea className="form-textarea" rows={3} placeholder="Reason for rejection…"
+                value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })} autoFocus />
             </div>
-            <div style={{ display:'flex', gap:'0.75rem' }}>
+            <div className="modal-actions">
               <button className="btn btn-danger" onClick={handleRejectConfirm}>Confirm Reject</button>
-              <button className="btn" style={{ background:'#64748b' }} onClick={() => setRejectModal({ open:false, ticketId:null, reason:'' })}>Cancel</button>
+              <button className="btn btn-ghost"  onClick={() => setRejectModal({ open: false, ticketId: null, reason: '' })}>Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Resolve Modal */}
       {resolveModal.open && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
-          <div className="card" style={{ maxWidth:'440px', width:'90%', margin:0 }}>
-            <h3 style={{ marginBottom:'1rem' }}>✅ Resolve Ticket</h3>
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">✅ Resolve Ticket</div>
             <div className="form-group">
               <label className="form-label">Resolution Notes (optional)</label>
-              <textarea className="form-textarea" rows="3" placeholder="What was done to fix the issue?"
-                value={resolveModal.notes}
-                onChange={e => setResolveModal({ ...resolveModal, notes: e.target.value })} autoFocus />
+              <textarea className="form-textarea" rows={3} placeholder="What was done to fix the issue?"
+                value={resolveModal.notes} onChange={e => setResolveModal({ ...resolveModal, notes: e.target.value })} autoFocus />
             </div>
-            <div style={{ display:'flex', gap:'0.75rem' }}>
-              <button className="btn" style={{ background:'#10b981' }} onClick={handleResolveConfirm}>Mark Resolved</button>
-              <button className="btn" style={{ background:'#64748b' }} onClick={() => setResolveModal({ open:false, ticketId:null, notes:'' })}>Cancel</button>
+            <div className="modal-actions">
+              <button className="btn btn-success" onClick={handleResolveConfirm}>Mark Resolved</button>
+              <button className="btn btn-ghost"   onClick={() => setResolveModal({ open: false, ticketId: null, notes: '' })}>Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Edit Comment Modal */}
       {editingComment && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
-          <div className="card" style={{ maxWidth:'440px', width:'90%', margin:0 }}>
-            <h3 style={{ marginBottom:'1rem' }}>✏️ Edit Comment</h3>
-            <textarea className="form-textarea" rows="3"
-              value={editingComment.text}
-              onChange={e => setEditingComment({ ...editingComment, text: e.target.value })} autoFocus />
-            <div style={{ display:'flex', gap:'0.75rem', marginTop:'1rem' }}>
-              <button className="btn" onClick={handleEditComment}>Save Changes</button>
-              <button className="btn" style={{ background:'#64748b' }} onClick={() => setEditingComment(null)}>Cancel</button>
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">✏️ Edit Comment</div>
+            <textarea className="form-textarea" rows={3}
+              value={editingComment.text} onChange={e => setEditingComment({ ...editingComment, text: e.target.value })} autoFocus />
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={handleEditComment}>Save Changes</button>
+              <button className="btn btn-ghost"   onClick={() => setEditingComment(null)}>Cancel</button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Submit new ticket */}
-      <TicketForm onSuccess={() => { setSuccess('✅ Ticket submitted successfully!'); fetchTickets(); }} />
 
       {/* Filter + list header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', margin:'2rem 0 1rem', flexWrap:'wrap', gap:'0.75rem' }}>
-        <h3 style={{ margin:0 }}>
-          {isAdmin ? 'All Tickets' : 'My Tickets'}
-          <span style={{ fontSize:'0.9rem', fontWeight:400, color:'#64748b', marginLeft:'0.5rem' }}>
-            ({filtered.length} of {tickets.length})
-          </span>
-        </h3>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="form-select" style={{ width:'auto', minWidth:'160px' }}>
-          <option value="">All Statuses</option>
-          <option value="OPEN">OPEN</option>
-          <option value="IN_PROGRESS">IN PROGRESS</option>
-          <option value="RESOLVED">RESOLVED</option>
-          <option value="CLOSED">CLOSED</option>
-          <option value="REJECTED">REJECTED</option>
-        </select>
+      <div className="filter-bar">
+        <div className="form-group">
+          <label className="form-label">Filter by Status</label>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="form-select" style={{ minWidth: 160 }}>
+            <option value="">All Statuses</option>
+            <option value="OPEN">OPEN</option>
+            <option value="IN_PROGRESS">IN PROGRESS</option>
+            <option value="RESOLVED">RESOLVED</option>
+            <option value="CLOSED">CLOSED</option>
+            <option value="REJECTED">REJECTED</option>
+          </select>
+        </div>
+        {filterStatus && <button className="btn btn-ghost btn-sm" onClick={() => setFilterStatus('')}>✕ Clear</button>}
+        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+          {filtered.length} of {tickets.length} ticket(s)
+        </span>
       </div>
 
+      {/* Ticket cards */}
       {loading ? (
-        <p className="loading-text">Loading tickets...</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {[1, 2, 3].map(i => <div key={i} className="skeleton skel-card" />)}
+        </div>
       ) : filtered.length === 0 ? (
-        <div style={{ textAlign:'center', padding:'2.5rem', color:'#94a3b8' }}>
-          <div style={{ fontSize:'2.5rem', marginBottom:'0.5rem' }}>🎫</div>
-          <p>No tickets found.</p>
+        <div className="glass-card">
+          <div className="empty-state">
+            <div className="empty-icon">🎫</div>
+            <p className="empty-text">No tickets found{filterStatus ? ` with status "${filterStatus}"` : ''}.</p>
+          </div>
         </div>
       ) : (
         <div>
           {filtered.map(ticket => (
-            <div key={ticket.id} className="card" style={{ marginBottom:'1rem' }}>
-              {/* Header row */}
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'0.5rem' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flexWrap:'wrap' }}>
-                  <span style={{
-                    padding:'0.2rem 0.6rem', borderRadius:'4px', fontSize:'0.75rem', fontWeight:700,
-                    background: PRIORITY_COLORS[ticket.priority] + '20', color: PRIORITY_COLORS[ticket.priority],
-                    border: `1px solid ${PRIORITY_COLORS[ticket.priority]}40`,
-                  }}>
-                    {ticket.priority}
-                  </span>
-                  <strong style={{ color:'#1e3a8a' }}>{ticket.category}</strong>
-                  <span style={{ color:'#94a3b8', fontSize:'0.8rem' }}>#{ticket.id?.slice(-8)}</span>
+            <div key={ticket.id} className="ticket-card">
+              {/* Header */}
+              <div className="ticket-header">
+                <div className="ticket-meta">
+                  <StatusBadge status={ticket.priority} />
+                  <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{ticket.category}</strong>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}>#{ticket.id?.slice(-8)}</span>
                   {ticket.resourceName && (
-                    <span style={{ fontSize:'0.8rem', color:'#64748b' }}>📍 {ticket.resourceName}</span>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>📍 {ticket.resourceName}</span>
                   )}
                 </div>
-                <span style={{
-                  padding:'0.25rem 0.7rem', borderRadius:'9999px', fontSize:'0.75rem', fontWeight:700,
-                  background: STATUS_COLORS[ticket.status] + '20', color: STATUS_COLORS[ticket.status],
-                }}>
-                  {ticket.status?.replace('_', ' ')}
-                </span>
+                <StatusBadge status={ticket.status} />
               </div>
 
-              <p style={{ margin:'0.75rem 0', color:'#334155', lineHeight:1.6 }}>{ticket.description}</p>
+              {/* Body */}
+              <p className="ticket-body">{ticket.description}</p>
 
               {/* Rejection reason */}
               {ticket.rejectionReason && (
-                <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:'6px', padding:'0.5rem 0.75rem', marginBottom:'0.5rem' }}>
-                  <small style={{ color:'#ef4444' }}><strong>Rejection Reason:</strong> {ticket.rejectionReason}</small>
+                <div style={{ background: 'var(--danger-bg)', border: '1px solid rgba(255,118,117,0.2)', borderRadius: 10, padding: '8px 12px', marginBottom: 10 }}>
+                  <span style={{ color: 'var(--danger)', fontSize: '0.8rem' }}>
+                    <strong>Rejection Reason:</strong> {ticket.rejectionReason}
+                  </span>
                 </div>
               )}
-
-              {/* Resolution notes */}
               {ticket.resolutionNotes && (
-                <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:'6px', padding:'0.5rem 0.75rem', marginBottom:'0.5rem' }}>
-                  <small style={{ color:'#16a34a' }}><strong>✅ Resolution Notes:</strong> {ticket.resolutionNotes}</small>
+                <div style={{ background: 'var(--success-bg)', border: '1px solid rgba(0,184,148,0.2)', borderRadius: 10, padding: '8px 12px', marginBottom: 10 }}>
+                  <span style={{ color: 'var(--success)', fontSize: '0.8rem' }}>
+                    <strong>✅ Resolution:</strong> {ticket.resolutionNotes}
+                  </span>
                 </div>
               )}
 
-              {/* Attachments */}
-              {ticket.attachments?.length > 0 && (
-                <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'0.75rem' }}>
-                  {ticket.attachments.map((url, i) => (
-                    <a key={i} href={`http://localhost:9090${url}`} target="_blank" rel="noreferrer">
-                      <img src={`http://localhost:9090${url}`} alt={`attachment-${i}`}
-                        style={{ width:'70px', height:'70px', objectFit:'cover', borderRadius:'6px', border:'1px solid #e2e8f0' }}
-                        onError={e => { e.target.style.display='none'; }}
-                      />
-                    </a>
-                  ))}
-                </div>
-              )}
-
-              {/* Meta + actions */}
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.5rem' }}>
-                <small style={{ color:'#94a3b8', fontSize:'0.78rem' }}>
-                  Created: {fmt(ticket.createdAt)}
+              {/* Footer */}
+              <div className="ticket-footer">
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>
+                  Created {fmt(ticket.createdAt)}
                   {ticket.assignedTo && ' · Assigned ✓'}
-                </small>
-                <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' }}>
-                  <button className="btn btn-small" style={{ background:'#475569' }}
-                    onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}>
-                    {expandedTicket === ticket.id ? 'Hide Comments' : `💬 Comments (${ticket.comments?.length || 0})`}
+                </span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}
+                  >
+                    💬 Comments ({ticket.comments?.length || 0})
                   </button>
 
-                  {/* Admin status transitions */}
                   {isAdmin && (STATUS_TRANSITIONS[ticket.status] || []).map(next => (
-                    <button key={next} className={`btn btn-small ${next === 'REJECTED' ? 'btn-danger' : ''}`}
-                      style={{ background: next === 'REJECTED' ? '#ef4444' : '#475569' }}
-                      onClick={() => next === 'REJECTED'
-                        ? setRejectModal({ open:true, ticketId:ticket.id, reason:'' })
-                        : handleAdvanceStatus(ticket.id, next)
-                      }>
+                    <button
+                      key={next}
+                      className={`btn btn-sm ${next === 'REJECTED' ? 'btn-danger' : 'btn-ghost'}`}
+                      onClick={() => next === 'REJECTED' ? setRejectModal({ open: true, ticketId: ticket.id, reason: '' }) : handleAdvanceStatus(ticket.id, next)}
+                    >
                       → {next.replace('_', ' ')}
                     </button>
                   ))}
-                  {/* Resolve button (IN_PROGRESS) */}
                   {isAdmin && ticket.status === 'IN_PROGRESS' && (
-                    <button className="btn btn-small" style={{ background:'#10b981' }}
-                      onClick={() => setResolveModal({ open:true, ticketId:ticket.id, notes:'' })}>
+                    <button className="btn btn-success btn-sm" onClick={() => setResolveModal({ open: true, ticketId: ticket.id, notes: '' })}>
                       ✅ Resolve
                     </button>
                   )}
@@ -302,50 +265,41 @@ const Tickets = () => {
 
               {/* Comments section */}
               {expandedTicket === ticket.id && (
-                <div style={{ marginTop:'1rem', borderTop:'1px solid #e2e8f0', paddingTop:'1rem' }}>
-                  <h4 style={{ marginBottom:'0.75rem', color:'#475569' }}>
+                <div className="comments-section">
+                  <p style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                     Comments ({ticket.comments?.length || 0})
-                  </h4>
+                  </p>
                   {ticket.comments?.length > 0 ? ticket.comments.map(c => (
-                    <div key={c.id} style={{ background:'#f8fafc', padding:'0.75rem', borderRadius:'6px', marginBottom:'0.5rem' }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.25rem' }}>
-                        <small style={{ fontWeight:600, color:'#1e3a8a' }}>
-                          {c.authorId === user.userId ? 'You' : `User …${c.authorId?.slice(-6)}`}
-                        </small>
-                        <div style={{ display:'flex', gap:'0.4rem', alignItems:'center' }}>
-                          <small style={{ color:'#94a3b8' }}>{fmt(c.createdAt)}</small>
+                    <div key={c.id} className="comment-item">
+                      <div className="comment-head">
+                        <span className="comment-author">{c.authorId === user.userId ? '👤 You' : `User …${c.authorId?.slice(-6)}`}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="comment-time">{fmt(c.createdAt)}</span>
                           {c.authorId === user.userId && (
                             <>
                               <button onClick={() => setEditingComment({ ticketId: ticket.id, commentId: c.id, text: c.content })}
-                                style={{ background:'none', border:'none', cursor:'pointer', color:'#3b82f6', fontSize:'0.75rem' }}>
-                                ✏️
-                              </button>
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-light)', fontSize: '0.78rem' }}>✏️</button>
                               <button onClick={() => handleDeleteComment(ticket.id, c.id)}
-                                style={{ background:'none', border:'none', cursor:'pointer', color:'#ef4444', fontSize:'0.75rem' }}>
-                                🗑
-                              </button>
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: '0.78rem' }}>🗑</button>
                             </>
                           )}
                         </div>
                       </div>
-                      <p style={{ margin:0, fontSize:'0.9rem', color:'#334155' }}>{c.content}</p>
+                      <p className="comment-text">{c.content}</p>
                     </div>
                   )) : (
-                    <p style={{ color:'#94a3b8', fontSize:'0.85rem' }}>No comments yet. Be the first to comment.</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>No comments yet. Be the first!</p>
                   )}
 
-                  {/* Add comment — not for closed/rejected */}
                   {ticket.status !== 'CLOSED' && ticket.status !== 'REJECTED' && (
-                    <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.75rem' }}>
-                      <input type="text" className="form-input" style={{ flex:1 }}
-                        placeholder="Write a comment..."
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <input type="text" className="form-input" style={{ flex: 1 }}
+                        placeholder="Write a comment…"
                         value={comment[ticket.id] || ''}
                         onChange={e => setComment({ ...comment, [ticket.id]: e.target.value })}
                         onKeyDown={e => e.key === 'Enter' && handleAddComment(ticket.id)}
                       />
-                      <button className="btn btn-small" style={{ whiteSpace:'nowrap' }}
-                        onClick={() => handleAddComment(ticket.id)}
-                        disabled={!comment[ticket.id]?.trim()}>
+                      <button className="btn btn-primary btn-sm" onClick={() => handleAddComment(ticket.id)} disabled={!comment[ticket.id]?.trim()}>
                         Post
                       </button>
                     </div>
@@ -356,7 +310,7 @@ const Tickets = () => {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 };
 

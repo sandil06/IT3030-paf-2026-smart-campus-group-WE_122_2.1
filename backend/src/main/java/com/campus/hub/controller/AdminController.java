@@ -1,16 +1,15 @@
 package com.campus.hub.controller;
 
 import com.campus.hub.exception.UnauthorizedException;
-import com.campus.hub.model.BookingStatus;
-import com.campus.hub.model.TicketStatus;
-import com.campus.hub.repository.BookingRepository;
-import com.campus.hub.repository.NotificationRepository;
-import com.campus.hub.repository.ResourceRepository;
-import com.campus.hub.repository.TicketRepository;
-import com.campus.hub.repository.UserRepository;
+import com.campus.hub.model.*;
+import com.campus.hub.repository.*;
+import com.campus.hub.dto.CreateUserRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 import java.util.Map;
 
@@ -59,5 +58,42 @@ public class AdminController {
         );
 
         return ResponseEntity.ok(stats);
+    }
+
+    @GetMapping("/users")
+    public ResponseEntity<List<User>> getAllUsers(@RequestAttribute("userRole") String userRole) {
+        if (!"ADMIN".equals(userRole)) throw new UnauthorizedException("Only ADMIN can access users.");
+        return ResponseEntity.ok(userRepository.findAll());
+    }
+
+    @PostMapping("/users")
+    public ResponseEntity<User> createUser(
+            @RequestAttribute("userRole") String userRole,
+            @Valid @RequestBody CreateUserRequest request) {
+        if (!"ADMIN".equals(userRole)) throw new UnauthorizedException("Only ADMIN can access users.");
+
+        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            throw new com.campus.hub.exception.ValidationException("Email already registered: " + request.getEmail());
+        }
+
+        User user = User.builder()
+                .name(request.getName())
+                .email(request.getEmail())
+                .role(Role.valueOf(request.getRole().toUpperCase()))
+                .build();
+        return ResponseEntity.ok(userRepository.save(user));
+    }
+
+    @PutMapping("/users/{id}/role")
+    public ResponseEntity<User> updateUserRole(
+            @RequestAttribute("userRole") String userRole,
+            @PathVariable String id,
+            @RequestParam String role) {
+        if (!"ADMIN".equals(userRole)) throw new UnauthorizedException("Only ADMIN can access users.");
+
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new com.campus.hub.exception.ResourceNotFoundException("User not found"));
+        user.setRole(Role.valueOf(role.toUpperCase()));
+        return ResponseEntity.ok(userRepository.save(user));
     }
 }

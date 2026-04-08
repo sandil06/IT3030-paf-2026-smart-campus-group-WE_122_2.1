@@ -1,10 +1,10 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider }        from './contexts/AuthContext';
 
-import Navbar         from './components/Navbar';
-import ProtectedRoute from './components/ProtectedRoute';
+import DashboardLayout from './components/DashboardLayout';
+import ProtectedRoute  from './components/ProtectedRoute';
 
 import LoginPage      from './pages/LoginPage';
 import Home           from './pages/Home';
@@ -26,47 +26,43 @@ function App() {
       <AuthProvider>
         <Router>
           <Routes>
-            {/* Public route — login page has its own full-screen layout */}
+            {/* Public: full-screen login */}
             <Route path="/login" element={<LoginPage />} />
 
-            {/* All other routes share the Navbar layout */}
+            {/* All authenticated routes use the sidebar/navbar shell */}
             <Route
               path="/*"
               element={
-                <div className="app-container">
-                  <Navbar />
-                  <main className="main-content">
-                    <Routes>
-                      <Route path="/" element={
-                        <ProtectedRoute><Home /></ProtectedRoute>
-                      } />
-                      <Route path="/resources" element={
-                        <ProtectedRoute><Resources /></ProtectedRoute>
-                      } />
-                      <Route path="/booking" element={
-                        <ProtectedRoute><Booking /></ProtectedRoute>
-                      } />
-                      <Route path="/my-bookings" element={
-                        <ProtectedRoute><MyBookings /></ProtectedRoute>
-                      } />
-                      <Route path="/tickets" element={
-                        <ProtectedRoute><Tickets /></ProtectedRoute>
-                      } />
-                      <Route path="/notifications" element={
-                        <ProtectedRoute><Notifications /></ProtectedRoute>
-                      } />
-                      {/* Admin-only routes */}
-                      <Route path="/admin" element={
-                        <ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>
-                      } />
-                      <Route path="/resources/manage" element={
-                        <ProtectedRoute requireAdmin><ResourceManager /></ProtectedRoute>
-                      } />
-                      {/* Catch-all redirect */}
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
-                  </main>
-                </div>
+                <DashboardLayout>
+                  <Routes>
+                    <Route path="/" element={
+                      <ProtectedRoute><Home /></ProtectedRoute>
+                    } />
+                    <Route path="/resources" element={
+                      <ProtectedRoute><Resources /></ProtectedRoute>
+                    } />
+                    <Route path="/booking" element={
+                      <ProtectedRoute><Booking /></ProtectedRoute>
+                    } />
+                    <Route path="/my-bookings" element={
+                      <ProtectedRoute><MyBookings /></ProtectedRoute>
+                    } />
+                    <Route path="/tickets" element={
+                      <ProtectedRoute><Tickets /></ProtectedRoute>
+                    } />
+                    <Route path="/notifications" element={
+                      <ProtectedRoute><Notifications /></ProtectedRoute>
+                    } />
+                    {/* Admin-only */}
+                    <Route path="/admin" element={
+                      <ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>
+                    } />
+                    <Route path="/resources/manage" element={
+                      <ProtectedRoute requireAdmin><ResourceManager /></ProtectedRoute>
+                    } />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </DashboardLayout>
               }
             />
           </Routes>

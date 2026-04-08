@@ -1,15 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
-import NotificationList from '../components/NotificationList';
+import { useAuth }    from '../contexts/AuthContext';
 
-const TYPE_ICONS = {
-  BOOKING_APPROVED:  '✅',
-  BOOKING_REJECTED:  '❌',
-  BOOKING_CANCELLED: '🚫',
-  TICKET_STATUS_CHANGED: '📋',
-  NEW_COMMENT:       '💬',
-  GENERAL:           '🔔',
+const TYPE_META = {
+  BOOKING_APPROVED:      { icon: '✅', bg: 'rgba(0,184,148,0.15)',   label: 'Booking Approved' },
+  BOOKING_REJECTED:      { icon: '❌', bg: 'rgba(255,118,117,0.15)', label: 'Booking Rejected' },
+  BOOKING_CANCELLED:     { icon: '🚫', bg: 'rgba(100,116,139,0.15)', label: 'Booking Cancelled' },
+  TICKET_STATUS_CHANGED: { icon: '📋', bg: 'rgba(116,185,255,0.15)', label: 'Ticket Updated' },
+  NEW_COMMENT:           { icon: '💬', bg: 'rgba(162,155,254,0.15)', label: 'New Comment' },
+  GENERAL:               { icon: '🔔', bg: 'rgba(108,92,231,0.15)',  label: 'General' },
+};
+
+const relativeTime = (dt) => {
+  if (!dt) return '';
+  const diff = Date.now() - new Date(dt).getTime();
+  const mins  = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days  = Math.floor(diff / 86400000);
+  if (mins < 1)    return 'just now';
+  if (mins < 60)   return `${mins}m ago`;
+  if (hours < 24)  return `${hours}h ago`;
+  return `${days}d ago`;
 };
 
 const Notifications = () => {
@@ -18,7 +29,7 @@ const Notifications = () => {
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
   const [message,  setMessage]  = useState('');
-  const [filter,   setFilter]   = useState('all'); // 'all' | 'unread'
+  const [filter,   setFilter]   = useState('all');
 
   const fetchNotifications = useCallback(async () => {
     if (!user?.userId) return;
@@ -35,13 +46,8 @@ const Notifications = () => {
   }, [user?.userId]);
 
   useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
-
-  useEffect(() => {
-    if (error)   { const t = setTimeout(() => setError(''),   6000); return () => clearTimeout(t); }
-  }, [error]);
-  useEffect(() => {
-    if (message) { const t = setTimeout(() => setMessage(''), 3000); return () => clearTimeout(t); }
-  }, [message]);
+  useEffect(() => { if (error)   { const t = setTimeout(() => setError(''),   6000); return () => clearTimeout(t); } }, [error]);
+  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 3000); return () => clearTimeout(t); } }, [message]);
 
   const handleMarkRead = async (id) => {
     try {
@@ -75,104 +81,115 @@ const Notifications = () => {
   };
 
   const unreadCount = notifications.filter(n => !n.readStatus).length;
-  const displayed = filter === 'unread' ? notifications.filter(n => !n.readStatus) : notifications;
+  const displayed   = filter === 'unread' ? notifications.filter(n => !n.readStatus) : notifications;
 
   return (
-    <div className="page">
-      {/* Header row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <h2 className="page-header" style={{ margin: 0 }}>
-          🔔 Notifications
+    <>
+      {/* Header */}
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 className="page-title">
+            🔔 Notifications
+            {unreadCount > 0 && (
+              <span className="badge badge-rejected" style={{ marginLeft: 10, fontSize: '0.7rem', padding: '4px 10px' }}>
+                {unreadCount} unread
+              </span>
+            )}
+          </h1>
+          <p className="page-subtitle">Stay updated on your bookings and ticket progress</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {unreadCount > 0 && (
-            <span style={{
-              background: '#1e3a8a', color: 'white',
-              padding: '0.2rem 0.6rem', borderRadius: '9999px',
-              fontSize: '0.8rem', fontWeight: 700, marginLeft: '0.75rem',
-            }}>
-              {unreadCount} unread
-            </span>
-          )}
-        </h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {unreadCount > 0 && (
-            <button className="btn btn-small" style={{ background: '#475569' }} onClick={handleMarkAllRead}>
-              ✓ Mark All Read
-            </button>
+            <button className="btn btn-ghost btn-sm" onClick={handleMarkAllRead} id="mark-all-read-btn">✓ Mark All Read</button>
           )}
           {notifications.length > 0 && (
-            <button className="btn btn-small btn-danger" onClick={handleClearAll}>
-              🗑 Clear All
-            </button>
+            <button className="btn btn-danger btn-sm" onClick={handleClearAll} id="clear-all-notifs-btn">🗑 Clear All</button>
           )}
         </div>
-      </div>
-
-      {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-        {['all', 'unread'].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            style={{
-              padding: '0.4rem 1rem', border: 'none', borderRadius: '0.375rem', cursor: 'pointer',
-              background: filter === f ? '#1e3a8a' : '#e2e8f0',
-              color: filter === f ? 'white' : '#475569',
-              fontWeight: filter === f ? 600 : 400,
-              fontSize: '0.875rem',
-            }}>
-            {f === 'all' ? `All (${notifications.length})` : `Unread (${unreadCount})`}
-          </button>
-        ))}
       </div>
 
       {message && <div className="alert alert-success">{message}</div>}
       {error   && <div className="alert alert-error">{error}</div>}
 
+      {/* Filter tabs */}
+      <div className="tabs" style={{ marginBottom: 22 }}>
+        <button className={`tab${filter === 'all' ? ' active' : ''}`} onClick={() => setFilter('all')}>
+          All <span className="tab-count">{notifications.length}</span>
+        </button>
+        <button className={`tab${filter === 'unread' ? ' active' : ''}`} onClick={() => setFilter('unread')}>
+          Unread <span className="tab-count">{unreadCount}</span>
+        </button>
+      </div>
+
+      {/* Notification list */}
       {loading ? (
-        <p className="loading-text">Loading notifications...</p>
-      ) : displayed.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>🔕</div>
-          <p>{filter === 'unread' ? 'No unread notifications.' : 'No notifications yet.'}</p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {displayed.map(n => (
-            <div key={n.id} style={{
-              display: 'flex', alignItems: 'flex-start', gap: '1rem',
-              padding: '1rem 1.25rem', borderRadius: '0.75rem',
-              background: n.readStatus ? 'white' : '#eff6ff',
-              border: `1px solid ${n.readStatus ? '#e2e8f0' : '#bfdbfe'}`,
-              boxShadow: n.readStatus ? 'none' : '0 2px 8px rgba(59,130,246,0.08)',
-            }}>
-              <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>
-                {TYPE_ICONS[n.type] || '🔔'}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, color: n.readStatus ? '#475569' : '#1e3a8a', fontWeight: n.readStatus ? 400 : 500, lineHeight: 1.5 }}>
-                  {n.message}
-                </p>
-                <p style={{ margin: '0.3rem 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
-                  {n.type?.replace(/_/g, ' ')} · {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                {!n.readStatus && (
-                  <button onClick={() => handleMarkRead(n.id)}
-                    style={{ background: 'none', border: '1px solid #93c5fd', color: '#1e3a8a', borderRadius: '0.375rem',
-                      padding: '0.25rem 0.5rem', cursor: 'pointer', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                    Mark Read
-                  </button>
-                )}
-                <button onClick={() => handleDelete(n.id)}
-                  style={{ background: 'none', border: '1px solid #fca5a5', color: '#dc2626', borderRadius: '0.375rem',
-                    padding: '0.25rem 0.5rem', cursor: 'pointer', fontSize: '0.75rem' }}>
-                  ✕
-                </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} style={{ display: 'flex', gap: 14, padding: '16px 20px', background: 'var(--glass-bg)', borderRadius: 'var(--radius-xl)', border: '1px solid var(--border)' }}>
+              <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div className="skeleton skel-text" style={{ width: '70%', marginBottom: 8 }} />
+                <div className="skeleton skel-text" style={{ width: '40%', height: 12 }} />
               </div>
             </div>
           ))}
         </div>
+      ) : displayed.length === 0 ? (
+        <div className="glass-card">
+          <div className="empty-state">
+            <div className="empty-icon">🔕</div>
+            <p className="empty-text">
+              {filter === 'unread' ? 'No unread notifications.' : 'No notifications yet. Actions will appear here.'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="notif-list" style={{ background: 'var(--glass-bg)' }}>
+          {displayed.map(n => {
+            const meta = TYPE_META[n.type] || TYPE_META.GENERAL;
+            return (
+              <div key={n.id} className={`notif-item${!n.readStatus ? ' unread' : ''}`}>
+                {/* Icon */}
+                <div className="notif-icon-wrap" style={{ background: meta.bg }}>
+                  {meta.icon}
+                </div>
+
+                {/* Content */}
+                <div className="notif-body">
+                  <p className="notif-msg">{n.message}</p>
+                  <p className="notif-meta">
+                    {meta.label} · {relativeTime(n.createdAt)}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexShrink: 0 }}>
+                  {!n.readStatus && (
+                    <button
+                      onClick={() => handleMarkRead(n.id)}
+                      className="btn btn-ghost btn-xs"
+                      title="Mark as read"
+                    >
+                      ✓ Read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDelete(n.id)}
+                    className="btn btn-danger btn-xs"
+                    title="Delete notification"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Unread indicator dot */}
+                {!n.readStatus && <div className="notif-unread-dot" />}
+              </div>
+            );
+          })}
+        </div>
       )}
-    </div>
+    </>
   );
 };
 

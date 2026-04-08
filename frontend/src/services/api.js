@@ -45,6 +45,9 @@ export const apiService = {
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   getAdminStats: () => api.get('/admin/stats'),
+  getUsers:      () => api.get('/admin/users'),
+  createUser:    (data) => api.post('/admin/users', data),
+  updateUserRole:(id, role) => api.put(`/admin/users/${id}/role`, null, { params: { role } }),
 
   // ── Resources ─────────────────────────────────────────────────────────────
   getResources:      (params)    => api.get('/resources', { params }),

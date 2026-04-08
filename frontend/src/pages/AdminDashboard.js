@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
-import BookingList from '../components/BookingList';
+import { useAuth }    from '../contexts/AuthContext';
+import BookingList    from '../components/BookingList';
+import StatusBadge    from '../components/StatusBadge';
 
+/* ── Helpers ───────────────────────────────────────────────── */
 const fmt = (dt) => dt ? new Date(dt).toLocaleString() : '—';
 
 const TICKET_STATUS_FLOW = {
@@ -14,43 +16,59 @@ const TICKET_STATUS_FLOW = {
 };
 
 const TICKET_STATUS_COLORS = {
-  OPEN: '#3b82f6', IN_PROGRESS: '#f59e0b',
-  RESOLVED: '#10b981', CLOSED: '#64748b', REJECTED: '#ef4444',
+  OPEN: 'var(--info)', IN_PROGRESS: 'var(--warning)',
+  RESOLVED: 'var(--success)', CLOSED: 'var(--text-muted)', REJECTED: 'var(--danger)',
 };
 
-const StatCard = ({ label, value, color, sub }) => (
-  <div className="card" style={{ textAlign: 'center', padding: '1.25rem', borderTop: `4px solid ${color}` }}>
-    <div style={{ fontSize: '2rem', fontWeight: 800, color }}>{value}</div>
-    <div style={{ fontSize: '0.875rem', color: '#64748b', marginTop: '0.25rem' }}>{label}</div>
-    {sub && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.125rem' }}>{sub}</div>}
+/* ── Stat Card ─────────────────────────────────────────────── */
+const StatCard = ({ label, value, sub, iconBg, icon }) => (
+  <div className="stat-card">
+    <div className="stat-icon" style={{ background: iconBg }}>{icon}</div>
+    <div className="stat-value" style={{ color: 'var(--text-primary)' }}>{value ?? '…'}</div>
+    <div className="stat-label">{label}</div>
+    {sub && <div className="stat-sub">{sub}</div>}
   </div>
 );
 
+/* ── Skeleton row ──────────────────────────────────────────── */
+const SkeletonRows = ({ n = 4 }) => (
+  <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    {Array.from({ length: n }).map((_, i) => (
+      <div key={i} className="skeleton skel-text" style={{ width: `${75 + (i % 3) * 8}%` }} />
+    ))}
+  </div>
+);
+
+/* ── Admin Dashboard ───────────────────────────────────────── */
 const AdminDashboard = () => {
   const { user } = useAuth();
-  const [tab, setTab]           = useState('bookings');
-  const [bookings, setBookings] = useState([]);
-  const [tickets,  setTickets]  = useState([]);
-  const [stats,    setStats]    = useState(null);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
-  const [message,  setMessage]  = useState('');
+  const [tab,          setTab]          = useState('bookings');
+  const [bookings,     setBookings]     = useState([]);
+  const [tickets,      setTickets]      = useState([]);
+  const [users,        setUsers]        = useState([]);
+  const [stats,        setStats]        = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState('');
+  const [message,      setMessage]      = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [rejectModal, setRejectModal]   = useState({ open: false, id: null, type: '', reason: '' });
+  const [rejectModal,  setRejectModal]  = useState({ open: false, id: null, type: '', reason: '' });
+  const [userModal,    setUserModal]    = useState({ open: false, name: '', email: '', role: 'USER' });
 
   const clearAlerts = () => { setError(''); setMessage(''); };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [bookRes, tickRes, statsRes] = await Promise.all([
+      const [bookRes, tickRes, statsRes, userRes] = await Promise.all([
         apiService.getAllBookings(),
         apiService.getAllTickets(),
         apiService.getAdminStats(),
+        apiService.getUsers(),
       ]);
       setBookings(bookRes.data);
       setTickets(tickRes.data);
       setStats(statsRes.data);
+      setUsers(userRes.data);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -60,23 +78,19 @@ const AdminDashboard = () => {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 4000); return () => clearTimeout(t); } }, [message]);
 
-  useEffect(() => {
-    if (message) { const t = setTimeout(() => setMessage(''), 4000); return () => clearTimeout(t); }
-  }, [message]);
-
-  // ── Booking actions ───────────────────────────────────────────────────────
+  /* ── Booking actions ── */
   const handleApprove = async (id) => {
     clearAlerts();
-    try { await apiService.approveBooking(id); setMessage('Booking approved.'); fetchAll(); }
+    try { await apiService.approveBooking(id); setMessage('✅ Booking approved.'); fetchAll(); }
     catch (err) { setError(err.message); }
   };
-
   const openRejectModal = (id, type = 'booking') =>
     setRejectModal({ open: true, id, type, reason: '' });
 
   const handleRejectConfirm = async () => {
-    if (!rejectModal.reason.trim()) { setError('Please provide a reason.'); return; }
+    if (!rejectModal.reason.trim()) { setError('Please provide a rejection reason.'); return; }
     clearAlerts();
     try {
       if (rejectModal.type === 'booking') {
@@ -91,101 +105,144 @@ const AdminDashboard = () => {
     } catch (err) { setError(err.message); }
   };
 
-  // ── Ticket actions ────────────────────────────────────────────────────────
+  /* ── Ticket actions ── */
   const handleTicketStatus = async (id, newStatus) => {
     if (newStatus === 'REJECTED') { openRejectModal(id, 'ticket'); return; }
     clearAlerts();
-    try {
-      await apiService.updateTicketStatus(id, newStatus);
-      setMessage(`Ticket moved to ${newStatus}.`);
-      fetchAll();
-    } catch (err) { setError(err.message); }
+    try { await apiService.updateTicketStatus(id, newStatus); setMessage(`Ticket moved to ${newStatus}.`); fetchAll(); }
+    catch (err) { setError(err.message); }
   };
-
   const handleAssignTicket = async (id) => {
     clearAlerts();
+    try { await apiService.assignTicket(id, user.userId); setMessage('Ticket assigned to you.'); fetchAll(); }
+    catch (err) { setError(err.message); }
+  };
+
+  /* ── User actions ── */
+  const handleCreateUser = async () => {
+    if (!userModal.name || !userModal.email) { setError('Name and Email are required.'); return; }
+    clearAlerts();
     try {
-      await apiService.assignTicket(id, user.userId);
-      setMessage('Ticket assigned to you.');
+      await apiService.createUser({ name: userModal.name, email: userModal.email, role: userModal.role });
+      setMessage('User created successfully.');
+      setUserModal({ open: false, name: '', email: '', role: 'USER' });
       fetchAll();
     } catch (err) { setError(err.message); }
   };
 
-  const filteredBookings = statusFilter
-    ? bookings.filter(b => b.status === statusFilter)
-    : bookings;
-  const filteredTickets = statusFilter
-    ? tickets.filter(t => t.status === statusFilter)
-    : tickets;
+  const handleToggleRole = async (u) => {
+    clearAlerts();
+    try {
+      const newRole = u.role === 'ADMIN' ? 'USER' : 'ADMIN';
+      await apiService.updateUserRole(u.id, newRole);
+      setMessage(`User role updated to ${newRole}.`);
+      fetchAll();
+    } catch (err) { setError(err.message); }
+  };
 
-  const tabBtn = (key, label) => (
-    <button
-      onClick={() => { setTab(key); setStatusFilter(''); }}
-      style={{
-        padding: '0.6rem 1.5rem', border: 'none', borderRadius: '0.5rem',
-        background: tab === key ? '#1e3a8a' : '#e2e8f0',
-        color: tab === key ? 'white' : '#475569',
-        fontWeight: tab === key ? 700 : 500, cursor: 'pointer',
-      }}
-    >{label}</button>
-  );
+  const filteredBookings = statusFilter ? bookings.filter(b => b.status === statusFilter) : bookings;
+  const filteredTickets  = statusFilter ? tickets.filter(t => t.status === statusFilter)  : tickets;
 
   return (
-    <div className="page">
-      <h2 className="page-header">Admin Dashboard</h2>
+    <>
+      {/* Page Header */}
+      <div className="page-header">
+        <h1 className="page-title">Admin Dashboard</h1>
+        <p className="page-subtitle">Manage bookings, tickets, and monitor system health</p>
+      </div>
 
       {message && <div className="alert alert-success">{message}</div>}
       {error   && <div className="alert alert-error">{error}</div>}
 
-      {/* Stats */}
-      {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-          <StatCard label="Total Resources" value={stats.totalResources} color="#3b82f6" />
-          <StatCard label="Total Users"     value={stats.totalUsers}     color="#8b5cf6" />
-          <StatCard label="Pending Bookings" value={stats.bookings?.pending}  color="#f59e0b" sub={`${stats.bookings?.total} total`} />
-          <StatCard label="Open Tickets"    value={stats.tickets?.open}   color="#ef4444" sub={`${stats.tickets?.total} total`} />
-          <StatCard label="Resolved Tickets" value={stats.tickets?.resolved} color="#10b981" />
-        </div>
-      )}
+      {/* ── Stats Grid ── */}
+      <div className="stats-grid">
+        <StatCard label="Total Resources"  value={stats?.totalResources}      icon="🏛"  iconBg="rgba(116,185,255,0.15)" />
+        <StatCard label="Total Users"      value={stats?.totalUsers}          icon="👥" iconBg="rgba(108,92,231,0.15)"  />
+        <StatCard label="Pending Bookings" value={stats?.bookings?.pending}   icon="📅" iconBg="rgba(253,203,110,0.15)" sub={`${stats?.bookings?.total ?? 0} total bookings`} />
+        <StatCard label="Open Tickets"     value={stats?.tickets?.open}       icon="🎫" iconBg="rgba(255,118,117,0.15)" sub={`${stats?.tickets?.total ?? 0} total tickets`} />
+        <StatCard label="Resolved Tickets" value={stats?.tickets?.resolved}   icon="✅" iconBg="rgba(0,184,148,0.15)"  />
+      </div>
 
-      {/* Reject Modal */}
+      {/* ── Reject Modal ── */}
       {rejectModal.open && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
-          <div className="card" style={{ maxWidth:'450px', width:'90%', margin:0 }}>
-            <h3 style={{ marginBottom:'1rem' }}>
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">
+              <span>❌</span>
               Reject {rejectModal.type === 'booking' ? 'Booking' : 'Ticket'}
-            </h3>
+            </div>
             <div className="form-group">
               <label className="form-label">Rejection Reason *</label>
-              <textarea className="form-textarea" rows="3"
-                placeholder="Enter reason..."
+              <textarea
+                className="form-textarea"
+                rows={3}
+                placeholder="Enter reason for rejection…"
                 value={rejectModal.reason}
                 onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
                 autoFocus
               />
             </div>
-            <div style={{ display:'flex', gap:'1rem' }}>
+            <div className="modal-actions">
               <button className="btn btn-danger" onClick={handleRejectConfirm}>Confirm Reject</button>
-              <button className="btn" style={{ background:'#64748b' }}
-                onClick={() => setRejectModal({ open:false, id:null, type:'', reason:'' })}>
-                Cancel
-              </button>
+              <button className="btn btn-ghost" onClick={() => setRejectModal({ open: false, id: null, type: '', reason: '' })}>Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Tab switcher */}
-      <div style={{ display:'flex', gap:'0.75rem', marginBottom:'1.25rem' }}>
-        {tabBtn('bookings', `📅 Bookings (${bookings.length})`)}
-        {tabBtn('tickets',  `🎫 Tickets (${tickets.length})`)}
+      {/* ── Add User Modal ── */}
+      {userModal.open && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title"><span>👤</span> Add New User</div>
+            <div className="form-group">
+              <label className="form-label">Name</label>
+              <input className="form-input" value={userModal.name} onChange={e => setUserModal({...userModal, name: e.target.value})} placeholder="Jane Doe" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input type="email" className="form-input" value={userModal.email} onChange={e => setUserModal({...userModal, email: e.target.value})} placeholder="jane@example.com" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Role</label>
+              <select className="form-select" value={userModal.role} onChange={e => setUserModal({...userModal, role: e.target.value})}>
+                <option value="USER">USER</option>
+                <option value="ADMIN">ADMIN</option>
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={handleCreateUser}>Create User</button>
+              <button className="btn btn-ghost" onClick={() => setUserModal({ open: false, name: '', email: '', role: 'USER' })}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tabs ── */}
+      {/* ── Tabs ── */}
+      <div className="flex items-center justify-between" style={{ marginBottom: 22 }}>
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          <button className={`tab${tab === 'bookings' ? ' active' : ''}`} onClick={() => { setTab('bookings'); setStatusFilter(''); }}>
+            📅 Bookings <span className="tab-count">{bookings.length}</span>
+          </button>
+          <button className={`tab${tab === 'tickets' ? ' active' : ''}`} onClick={() => { setTab('tickets'); setStatusFilter(''); }}>
+            🎫 Tickets <span className="tab-count">{tickets.length}</span>
+          </button>
+          <button className={`tab${tab === 'users' ? ' active' : ''}`} onClick={() => setTab('users')}>
+            👥 Users <span className="tab-count">{users.length}</span>
+          </button>
+        </div>
+        {tab === 'users' && (
+          <button className="btn btn-primary" onClick={() => setUserModal({ open: true, name: '', email: '', role: 'USER' })}>+ Add User</button>
+        )}
       </div>
 
-      {/* Filters */}
-      <div className="card" style={{ display:'flex', gap:'1rem', alignItems:'flex-end', flexWrap:'wrap', marginBottom:'1.5rem' }}>
-        <div className="form-group" style={{ marginBottom:0 }}>
+      {/* ── Filter Bar ── */}
+      {tab !== 'users' && (
+      <div className="filter-bar">
+        <div className="form-group">
           <label className="form-label">Filter by Status</label>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="form-select">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="form-select" style={{ minWidth: 160 }}>
             <option value="">All Statuses</option>
             {tab === 'bookings' ? (
               <>
@@ -197,7 +254,7 @@ const AdminDashboard = () => {
             ) : (
               <>
                 <option value="OPEN">OPEN</option>
-                <option value="IN_PROGRESS">IN_PROGRESS</option>
+                <option value="IN_PROGRESS">IN PROGRESS</option>
                 <option value="RESOLVED">RESOLVED</option>
                 <option value="CLOSED">CLOSED</option>
                 <option value="REJECTED">REJECTED</option>
@@ -205,71 +262,113 @@ const AdminDashboard = () => {
             )}
           </select>
         </div>
-        <button className="btn btn-small" style={{ background:'#64748b' }} onClick={() => setStatusFilter('')}>
-          Clear Filter
-        </button>
-        <span style={{ color:'#64748b', fontSize:'0.9rem', marginLeft:'auto' }}>
+        {statusFilter && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setStatusFilter('')}>✕ Clear</button>
+        )}
+        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
           {tab === 'bookings' ? filteredBookings.length : filteredTickets.length} result(s)
         </span>
       </div>
+      )}
 
+      {/* ── Content ── */}
       {loading ? (
-        <p className="loading-text">Loading data...</p>
+        <div className="table-wrap"><SkeletonRows n={5} /></div>
       ) : tab === 'bookings' ? (
         <BookingList bookings={filteredBookings} onApprove={handleApprove} onReject={(id) => openRejectModal(id, 'booking')} showActions />
       ) : (
-        /* Ticket management table */
-        <div className="card" style={{ overflowX: 'auto' }}>
+        /* ── Ticket Table ── */
+        <div className="table-wrap">
           {filteredTickets.length === 0 ? (
-            <p style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No tickets found.</p>
+            <div className="empty-state">
+              <div className="empty-icon">🎫</div>
+              <p className="empty-text">No tickets found{statusFilter ? ` with status "${statusFilter}"` : ''}.</p>
+            </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <table className="data-table">
               <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                  {['Category', 'Priority', 'Status', 'Resource', 'Reporter', 'Created', 'Actions'].map(h => (
-                    <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#475569', fontWeight: 600 }}>{h}</th>
-                  ))}
+                <tr>
+                  <th>Ticket</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Resource</th>
+                  <th>Reporter</th>
+                  <th>Created</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredTickets.map(ticket => (
-                  <tr key={ticket.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '0.75rem' }}><strong>{ticket.category}</strong><br/><span style={{ fontSize:'0.8rem', color:'#94a3b8' }}>{ticket.description?.substring(0,60)}{ticket.description?.length > 60 ? '…' : ''}</span></td>
-                    <td style={{ padding: '0.75rem' }}>
-                      <span style={{ padding: '0.2rem 0.5rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600,
-                        background: ticket.priority === 'CRITICAL' ? '#fef2f2' : ticket.priority === 'HIGH' ? '#fff7ed' : '#f0fdf4',
-                        color: ticket.priority === 'CRITICAL' ? '#dc2626' : ticket.priority === 'HIGH' ? '#ea580c' : '#16a34a' }}>
-                        {ticket.priority}
-                      </span>
+                  <tr key={ticket.id}>
+                    <td>
+                      <strong>{ticket.category}</strong>
+                      <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                        #{ticket.id?.slice(-8)} · {ticket.description?.substring(0, 55)}{ticket.description?.length > 55 ? '…' : ''}
+                      </div>
                     </td>
-                    <td style={{ padding: '0.75rem' }}>
-                      <span style={{ padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600,
-                        background: TICKET_STATUS_COLORS[ticket.status] + '20',
-                        color: TICKET_STATUS_COLORS[ticket.status] }}>
-                        {ticket.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.75rem', color: '#64748b', fontSize: '0.85rem' }}>{ticket.resourceName || ticket.resourceId?.substring(0,8) || '—'}</td>
-                    <td style={{ padding: '0.75rem', color: '#64748b', fontSize: '0.85rem' }}>{ticket.reporterId?.substring(0,8)}…</td>
-                    <td style={{ padding: '0.75rem', color: '#94a3b8', fontSize: '0.8rem' }}>{fmt(ticket.createdAt)}</td>
-                    <td style={{ padding: '0.75rem' }}>
-                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <td><StatusBadge status={ticket.priority} /></td>
+                    <td><StatusBadge status={ticket.status} /></td>
+                    <td>{ticket.resourceName || '—'}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>…{ticket.reporterId?.slice(-8)}</td>
+                    <td>{fmt(ticket.createdAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {!ticket.assignedTo && ticket.status === 'OPEN' && (
-                          <button className="btn btn-small" style={{ background: '#3b82f6' }}
-                            onClick={() => handleAssignTicket(ticket.id)}>Assign Me</button>
+                          <button className="btn btn-primary btn-xs" onClick={() => handleAssignTicket(ticket.id)}>Assign Me</button>
                         )}
                         {TICKET_STATUS_FLOW[ticket.status]?.map(next => (
-                          <button key={next} className="btn btn-small"
-                            style={{ background: TICKET_STATUS_COLORS[next] }}
-                            onClick={() => handleTicketStatus(ticket.id, next)}>
+                          <button
+                            key={next}
+                            className={`btn btn-xs ${next === 'REJECTED' ? 'btn-danger' : next === 'RESOLVED' ? 'btn-success' : 'btn-ghost'}`}
+                            onClick={() => handleTicketStatus(ticket.id, next)}
+                          >
                             → {next.replace('_', ' ')}
                           </button>
                         ))}
                       </div>
                       {ticket.rejectionReason && (
-                        <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.25rem' }}>
-                          Reason: {ticket.rejectionReason}
-                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--danger)', marginTop: 4 }}>Reason: {ticket.rejectionReason}</div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        /* ── Users Table ── */
+        <div className="table-wrap">
+          {users.length === 0 ? (
+            <div className="empty-state"><p className="empty-text">No users found.</p></div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Joined</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <img src={u.picture || 'https://via.placeholder.com/30'} alt="" style={{ width: 30, height: 30, borderRadius: '50%' }} />
+                        <strong>{u.name}</strong>
+                      </div>
+                    </td>
+                    <td>{u.email}</td>
+                    <td><StatusBadge status={`ROLE-${u.role}`} /></td>
+                    <td>{fmt(u.createdAt)}</td>
+                    <td>
+                      {u.id !== user.userId && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleToggleRole(u)}>
+                          {u.role === 'ADMIN' ? 'Revoke Admin' : 'Make Admin'}
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -279,7 +378,7 @@ const AdminDashboard = () => {
           )}
         </div>
       )}
-    </div>
+    </>
   );
 };
 
