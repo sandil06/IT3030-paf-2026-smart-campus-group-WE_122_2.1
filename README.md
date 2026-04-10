@@ -59,15 +59,7 @@ Before attempting to run the project, ensure you have the following installed:
 * **Node.js 18.x** or higher (with NPM)
 * **MongoDB** (Running locally on the default port `27017`)
 
-### 2. Quick Launch
-For a seamless startup experience, simply execute the provided startup script in Windows PowerShell from the root directory:
-
-```powershell
-.\start_app.ps1
-```
-*(This script will automatically boot the Spring Boot API on Port `9090` and sequence the React frontend launch on Port `3000`.)*
-
-### 3. Manual Launch
+### 2. Launch
 
 If you prefer to start the servers independently:
 
