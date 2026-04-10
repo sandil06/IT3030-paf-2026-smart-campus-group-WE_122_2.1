@@ -66,7 +66,7 @@ If you prefer to start the servers independently:
 **Terminal 1 (Backend API):**
 ```bash
 cd backend
-./mvnw spring-boot:run
+.\apache-maven-3.9.6\bin\mvn.cmd spring-boot:run
 ```
 
 **Terminal 2 (React Frontend):**
